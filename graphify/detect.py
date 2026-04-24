@@ -10,6 +10,7 @@ from pathlib import Path
 
 class FileType(str, Enum):
     CODE = "code"
+    SQL = "sql"
     DOCUMENT = "document"
     PAPER = "paper"
     IMAGE = "image"
@@ -19,6 +20,7 @@ class FileType(str, Enum):
 _MANIFEST_PATH = "graphify-out/manifest.json"
 
 CODE_EXTENSIONS = {'.py', '.ts', '.js', '.jsx', '.tsx', '.mjs', '.ejs', '.go', '.rs', '.java', '.cpp', '.cc', '.cxx', '.c', '.h', '.hpp', '.rb', '.swift', '.kt', '.kts', '.cs', '.scala', '.php', '.lua', '.toc', '.zig', '.ps1', '.ex', '.exs', '.m', '.mm', '.jl', '.vue', '.svelte', '.dart', '.v', '.sv'}
+SQL_EXTENSIONS = {'.sql'}
 DOC_EXTENSIONS = {'.md', '.mdx', '.txt', '.rst', '.html'}
 PAPER_EXTENSIONS = {'.pdf'}
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'}
@@ -85,6 +87,8 @@ def classify_file(path: Path) -> FileType | None:
     ext = path.suffix.lower()
     if ext in CODE_EXTENSIONS:
         return FileType.CODE
+    if ext in SQL_EXTENSIONS:
+        return FileType.SQL
     if ext in PAPER_EXTENSIONS:
         # PDFs inside Xcode asset catalogs are vector icons, not papers
         if any(part.endswith(tuple(_ASSET_DIR_MARKERS)) for part in path.parts):
@@ -338,6 +342,7 @@ def detect(root: Path, *, follow_symlinks: bool = False) -> dict:
     root = root.resolve()
     files: dict[FileType, list[str]] = {
         FileType.CODE: [],
+        FileType.SQL: [],
         FileType.DOCUMENT: [],
         FileType.PAPER: [],
         FileType.IMAGE: [],

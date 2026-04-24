@@ -109,13 +109,15 @@ def _is_concept_node(G: nx.Graph, node_id: str) -> bool:
     return False
 
 
-from graphify.detect import CODE_EXTENSIONS, DOC_EXTENSIONS, PAPER_EXTENSIONS, IMAGE_EXTENSIONS
+from graphify.detect import CODE_EXTENSIONS, SQL_EXTENSIONS, DOC_EXTENSIONS, PAPER_EXTENSIONS, IMAGE_EXTENSIONS
 
 
 def _file_category(path: str) -> str:
     ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
     if ext in CODE_EXTENSIONS:
         return "code"
+    if ext in SQL_EXTENSIONS:
+        return "sql"
     if ext in PAPER_EXTENSIONS:
         return "paper"
     if ext in IMAGE_EXTENSIONS:
@@ -347,6 +349,7 @@ def suggest_questions(
     """
     questions = []
     node_community = _node_community_map(communities)
+    has_sql = any(data.get("type") == "sql_file" for _, data in G.nodes(data=True))
 
     # 1. AMBIGUOUS edges → unresolved relationship questions
     for u, v, data in G.edges(data=True):
@@ -442,7 +445,7 @@ def suggest_questions(
             })
 
     if not questions:
-        return [{
+        questions = [{
             "type": "no_signal",
             "question": None,
             "why": (
@@ -452,6 +455,31 @@ def suggest_questions(
                 "Add more files or run with --mode deep to extract richer edges."
             ),
         }]
+
+    if has_sql:
+        sql_questions = [
+            {
+                "type": "sql_table_writes",
+                "question": "Which tables are written to by the most code paths?",
+                "why": "SQL nodes are present, so mutation edges can reveal the heaviest write targets.",
+            },
+            {
+                "type": "sql_view_fan_in",
+                "question": "Which views fan out to the largest number of base tables?",
+                "why": "View dependency edges expose SQL structures that aggregate many upstream relations.",
+            },
+            {
+                "type": "sql_defined_never_used",
+                "question": "Are there tables defined in the schema but never referenced by any query?",
+                "why": "The SQL graph contains both definition and usage edges, so orphaned tables are detectable.",
+            },
+        ]
+        existing = {q.get("question") for q in questions}
+        if len(questions) == 1 and questions[0].get("type") == "no_signal":
+            questions = []
+        for question in sql_questions:
+            if question["question"] not in existing:
+                questions.append(question)
 
     return questions[:top_n]
 

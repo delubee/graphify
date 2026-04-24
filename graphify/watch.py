@@ -6,10 +6,10 @@ import time
 from pathlib import Path
 
 
-from graphify.detect import CODE_EXTENSIONS, DOC_EXTENSIONS, PAPER_EXTENSIONS, IMAGE_EXTENSIONS
+from graphify.detect import CODE_EXTENSIONS, SQL_EXTENSIONS, DOC_EXTENSIONS, PAPER_EXTENSIONS, IMAGE_EXTENSIONS
 
-_WATCHED_EXTENSIONS = CODE_EXTENSIONS | DOC_EXTENSIONS | PAPER_EXTENSIONS | IMAGE_EXTENSIONS
-_CODE_EXTENSIONS = CODE_EXTENSIONS
+_WATCHED_EXTENSIONS = CODE_EXTENSIONS | SQL_EXTENSIONS | DOC_EXTENSIONS | PAPER_EXTENSIONS | IMAGE_EXTENSIONS
+_CODE_EXTENSIONS = CODE_EXTENSIONS | SQL_EXTENSIONS
 
 
 def _report_root_label(watch_path: Path) -> str:
@@ -34,7 +34,7 @@ def _relativize_source_files(payload: dict, root: Path) -> None:
 
 
 def _rebuild_code(watch_path: Path, *, follow_symlinks: bool = False) -> bool:
-    """Re-run AST extraction + build + cluster + report for code files. No LLM needed.
+    """Re-run AST extraction + build + cluster + report for code and SQL files. No LLM needed.
 
     Returns True on success, False on error.
     """
@@ -52,12 +52,14 @@ def _rebuild_code(watch_path: Path, *, follow_symlinks: bool = False) -> bool:
 
         detected = detect(watch_path, follow_symlinks=follow_symlinks)
         code_files = [Path(f) for f in detected['files']['code']]
+        sql_files = [Path(f) for f in detected['files'].get('sql', [])]
+        extract_files = code_files + sql_files
 
-        if not code_files:
-            print("[graphify watch] No code files found - nothing to rebuild.")
+        if not extract_files:
+            print("[graphify watch] No code or SQL files found - nothing to rebuild.")
             return False
 
-        result = extract(code_files, cache_root=watch_root)
+        result = extract(extract_files, cache_root=watch_root)
 
         # Preserve semantic nodes/edges from a previous full run.
         # AST-only rebuild replaces code nodes; doc/paper/image nodes are kept.
@@ -84,8 +86,8 @@ def _rebuild_code(watch_path: Path, *, follow_symlinks: bool = False) -> bool:
         _relativize_source_files(result, project_root)
 
         detection = {
-            "files": {"code": [str(f) for f in code_files], "document": [], "paper": [], "image": []},
-            "total_files": len(code_files),
+            "files": {"code": [str(f) for f in code_files], "sql": [str(f) for f in sql_files], "document": [], "paper": [], "image": []},
+            "total_files": len(extract_files),
             "total_words": detected.get("total_words", 0),
         }
 
@@ -207,7 +209,7 @@ def watch(watch_path: Path, debounce: float = 3.0) -> None:
     observer.start()
 
     print(f"[graphify watch] Watching {watch_path.resolve()} - press Ctrl+C to stop")
-    print(f"[graphify watch] Code changes rebuild graph automatically. "
+    print(f"[graphify watch] Code and SQL changes rebuild graph automatically. "
           f"Doc/image changes require /graphify --update.")
     print(f"[graphify watch] Debounce: {debounce}s")
 

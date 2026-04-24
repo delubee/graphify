@@ -3210,7 +3210,8 @@ def extract(paths: list[Path], cache_root: Path | None = None) -> dict:
             inferred common path prefix). Pass Path('.') when running on a
             subdirectory so the cache stays at ./graphify-out/cache/.
     """
-    _check_tree_sitter_version()
+    if any(path.suffix != ".sql" for path in paths):
+        _check_tree_sitter_version()
     per_file: list[dict] = []
 
     # Infer a common root for cache keys (use first diverging segment, not sum of all matches)
@@ -3269,6 +3270,7 @@ def extract(paths: list[Path], cache_root: Path | None = None) -> dict:
         ".dart": extract_dart,
         ".v": extract_verilog,
         ".sv": extract_verilog,
+        ".sql": None,
     }
 
     total = len(paths)
@@ -3281,13 +3283,18 @@ def extract(paths: list[Path], cache_root: Path | None = None) -> dict:
             extractor = extract_blade
         else:
             extractor = _DISPATCH.get(path.suffix)
-        if extractor is None:
-            continue
         cached = load_cached(path, cache_root or root)
         if cached is not None:
             per_file.append(cached)
             continue
-        result = extractor(path)
+        if path.suffix == ".sql":
+            from .sql import extract_sql
+
+            result = extract_sql(path, project_root=cache_root or root)
+        else:
+            if extractor is None:
+                continue
+            result = extractor(path)
         if "error" not in result:
             save_cached(path, result, cache_root or root)
         per_file.append(result)

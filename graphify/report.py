@@ -12,6 +12,139 @@ def _safe_community_name(label: str) -> str:
     return cleaned or "unnamed"
 
 
+def _render_sql_overview(G: nx.Graph) -> str | None:
+    sql_files = [(node_id, data) for node_id, data in G.nodes(data=True) if data.get("type") == "sql_file"]
+    if not sql_files:
+        return None
+
+    tables = {node_id: data for node_id, data in G.nodes(data=True) if data.get("type") == "table"}
+    views = {
+        node_id: data
+        for node_id, data in G.nodes(data=True)
+        if data.get("type") in {"view", "materialized_view"}
+    }
+    statements = [data for _, data in G.nodes(data=True) if data.get("type") == "statement"]
+    default_schema = sorted(
+        (data.get("default_schema", "public") for _, data in sql_files),
+        key=lambda schema: (schema != "public", schema),
+    )[0]
+
+    referenced_rows = []
+    for node_id, data in tables.items():
+        selects = 0
+        mutations = 0
+        for _, _, edge in G.edges(data=True):
+            target = edge.get("_tgt")
+            if target != node_id:
+                continue
+            if edge.get("relation") in {"selects_from", "joins"}:
+                selects += 1
+            if edge.get("relation") in {"inserts_into", "updates", "deletes_from"}:
+                mutations += 1
+        referenced_rows.append((selects + mutations, data.get("qualified_name", data.get("label", node_id)), selects, mutations, data.get("defining_file") or "*(not found in corpus)*"))
+    referenced_rows.sort(key=lambda item: (-item[0], item[1]))
+
+    mutated_rows = []
+    for node_id, data in tables.items():
+        inserts = updates = deletes = 0
+        for _, _, edge in G.edges(data=True):
+            target = edge.get("_tgt")
+            if target != node_id:
+                continue
+            relation = edge.get("relation")
+            if relation == "inserts_into":
+                inserts += 1
+            elif relation == "updates":
+                updates += 1
+            elif relation == "deletes_from":
+                deletes += 1
+        total = inserts + updates + deletes
+        mutated_rows.append((total, data.get("qualified_name", data.get("label", node_id)), inserts, updates, deletes))
+    mutated_rows.sort(key=lambda item: (-item[0], item[1]))
+
+    fan_in_rows = []
+    for node_id, data in views.items():
+        depends = sum(
+            1
+            for _, _, edge in G.edges(data=True)
+            if edge.get("_src") == node_id and edge.get("relation") == "depends_on"
+        )
+        fan_in_rows.append((depends, data.get("qualified_name", data.get("label", node_id)), data.get("defining_file") or "*(not found in corpus)*"))
+    fan_in_rows.sort(key=lambda item: (-item[0], item[1]))
+
+    hotspot_rows = []
+    for _, data in sql_files:
+        hotspot_rows.append((data.get("statement_count", 0), data.get("label", data.get("path", "")), len({
+            edge.get("_tgt")
+            for _, _, edge in G.edges(data=True)
+            if edge.get("_src") == data.get("id")
+            if edge.get("relation") == "defines"
+        })))
+    hotspot_rows.sort(key=lambda item: (-item[0], item[1]))
+
+    def render_table(header: str, rows: list[tuple], format_row) -> list[str]:
+        lines = [header]
+        visible = rows[:10]
+        lines.extend(format_row(row) for row in visible)
+        if len(rows) > 10:
+            lines.append("")
+            lines.append(f"(and {len(rows) - 10} more)")
+        return lines
+
+    lines = [
+        "## SQL Overview",
+        "",
+        f"_{len(statements)} statements across {len(sql_files)} .sql files. Default schema: `{default_schema}`._",
+        "",
+        "### Most-referenced tables",
+        "",
+        "| Table | Selects | Mutations | Defined in |",
+        "|---|---:|---:|---|",
+    ]
+    for _, qualified_name, selects, mutations, defining_file in referenced_rows[:10]:
+        lines.append(f"| `{qualified_name}` | {selects} | {mutations} | `{defining_file}` |")
+    if len(referenced_rows) > 10:
+        lines.extend(["", f"(and {len(referenced_rows) - 10} more)"])
+
+    lines.extend([
+        "",
+        "### Most-mutated tables",
+        "",
+        "| Table | Inserts | Updates | Deletes | Total |",
+        "|---|---:|---:|---:|---:|",
+    ])
+    for total, qualified_name, inserts, updates, deletes in mutated_rows[:10]:
+        lines.append(f"| `{qualified_name}` | {inserts} | {updates} | {deletes} | {total} |")
+    if len(mutated_rows) > 10:
+        lines.extend(["", f"(and {len(mutated_rows) - 10} more)"])
+
+    lines.extend([
+        "",
+        "### Views by dependency fan-in",
+        "",
+        "| View | Depends on | Defined in |",
+        "|---|---:|---|",
+    ])
+    for depends, qualified_name, defining_file in fan_in_rows[:10]:
+        lines.append(f"| `{qualified_name}` | {depends} tables | `{defining_file}` |")
+    if len(fan_in_rows) > 10:
+        lines.extend(["", f"(and {len(fan_in_rows) - 10} more)"])
+
+    lines.extend([
+        "",
+        "### SQL hotspots by file",
+        "",
+        "| File | Statements | Tables referenced |",
+        "|---|---:|---:|",
+    ])
+    for statement_count, label, table_refs in hotspot_rows[:10]:
+        lines.append(f"| `{label}` | {statement_count} | {table_refs} |")
+    if len(hotspot_rows) > 10:
+        lines.extend(["", f"(and {len(hotspot_rows) - 10} more)"])
+
+    return "\n".join(lines)
+
+
 def generate(
     G: nx.Graph,
     communities: dict[int, list[str]],
@@ -77,6 +210,10 @@ def generate(
     ]
     for i, node in enumerate(god_node_list, 1):
         lines.append(f"{i}. `{node['label']}` - {node['degree']} edges")
+
+    sql_overview = _render_sql_overview(G)
+    if sql_overview:
+        lines += ["", sql_overview]
 
     lines += ["", "## Surprising Connections (you probably didn't know these)"]
     if surprise_list:

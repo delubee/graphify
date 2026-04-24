@@ -10,6 +10,8 @@ def __getattr__(name):
         "cluster": ("graphify.cluster", "cluster"),
         "score_all": ("graphify.cluster", "score_all"),
         "cohesion_score": ("graphify.cluster", "cohesion_score"),
+        "extract_sql": ("graphify.sql.extract_sql", "extract_sql"),
+        "SqlExtractionResult": ("graphify.sql.model", "SqlExtractionResult"),
         "god_nodes": ("graphify.analyze", "god_nodes"),
         "surprising_connections": ("graphify.analyze", "surprising_connections"),
         "suggest_questions": ("graphify.analyze", "suggest_questions"),

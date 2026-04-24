@@ -28,9 +28,9 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 
 **Purpose**: Dependency + fixture scaffolding that everything else builds on.
 
-- [ ] T001 Add `sqlglot>=25.0.0` to `[project] dependencies` in `pyproject.toml` (justify in the PR description per constitution I: pure-Python, multi-dialect, no binary wheel)
-- [ ] T002 [P] Create SQL fixture files: `tests/fixtures/sql/schema.sql`, `tests/fixtures/sql/views.sql`, `tests/fixtures/sql/queries.sql`, `tests/fixtures/sql/migrations/001_init.sql`, `tests/fixtures/sql/malformed.sql`, `tests/fixtures/sql/empty.sql`, `tests/fixtures/sql/multi_schema.sql` — each seeded from the quickstart.md examples
-- [ ] T003 [P] Add a `giant_sql` fixture generator function in `tests/conftest.py` that synthesizes a ≥1000-statement `.sql` file into `tmp_path` (used by streaming / memory tests)
+- [X] T001 Add `sqlglot>=25.0.0` to `[project] dependencies` in `pyproject.toml` (justify in the PR description per constitution I: pure-Python, multi-dialect, no binary wheel)
+- [X] T002 [P] Create SQL fixture files: `tests/fixtures/sql/schema.sql`, `tests/fixtures/sql/views.sql`, `tests/fixtures/sql/queries.sql`, `tests/fixtures/sql/migrations/001_init.sql`, `tests/fixtures/sql/malformed.sql`, `tests/fixtures/sql/empty.sql`, `tests/fixtures/sql/multi_schema.sql` — each seeded from the quickstart.md examples
+- [X] T003 [P] Add a `giant_sql` fixture generator function in `tests/conftest.py` that synthesizes a ≥1000-statement `.sql` file into `tmp_path` (used by streaming / memory tests)
 
 ---
 
@@ -40,12 +40,12 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 
 **⚠️ CRITICAL**: No user-story work can start until this phase is complete.
 
-- [ ] T004 Create the `graphify/sql/` subpackage with `__init__.py` re-exporting `extract_sql`, and empty placeholder modules `graphify/sql/extract_sql.py`, `graphify/sql/identifiers.py`, `graphify/sql/fallback.py`, `graphify/sql/model.py`, `graphify/sql/statements.py`, `graphify/sql/embedded.py`
-- [ ] T005 [P] Define the shared data-model TypedDicts (`SqlExtractionResult`, node-shape helpers) in `graphify/sql/model.py` per `specs/001-sql-native-support/data-model.md`
-- [ ] T006 [P] Implement identifier helpers in `graphify/sql/identifiers.py`: `_make_sql_id(...)` following the existing `_make_id` convention, `normalize_identifier(raw, quoted)` (R-005 casing), `resolve_default_schema(statements) -> str` (R-004 two-pass), `qualify(schema, object)`, `qualify_column(schema, object, column)`
-- [ ] T007 Add `FileType.SQL = "sql"` and `SQL_EXTENSIONS = {'.sql'}` constants in `graphify/detect.py`; add a `detect()` bucket key for SQL files
-- [ ] T008 Wire `.sql` files through the detect pipeline: update `graphify/detect.py` so `SQL_EXTENSIONS` files land in the new `sql` bucket, respecting `.graphifyignore` and the existing `graphify-out/` exclusion (T007 prerequisite)
-- [ ] T009 [P] Extend `_WATCHED_EXTENSIONS` in `graphify/watch.py` to include `SQL_EXTENSIONS` so watch mode triggers on `.sql` changes
+- [X] T004 Create the `graphify/sql/` subpackage with `__init__.py` re-exporting `extract_sql`, and empty placeholder modules `graphify/sql/extract_sql.py`, `graphify/sql/identifiers.py`, `graphify/sql/fallback.py`, `graphify/sql/model.py`, `graphify/sql/statements.py`, `graphify/sql/embedded.py`
+- [X] T005 [P] Define the shared data-model TypedDicts (`SqlExtractionResult`, node-shape helpers) in `graphify/sql/model.py` per `specs/001-sql-native-support/data-model.md`
+- [X] T006 [P] Implement identifier helpers in `graphify/sql/identifiers.py`: `_make_sql_id(...)` following the existing `_make_id` convention, `normalize_identifier(raw, quoted)` (R-005 casing), `resolve_default_schema(statements) -> str` (R-004 two-pass), `qualify(schema, object)`, `qualify_column(schema, object, column)`
+- [X] T007 Add `FileType.SQL = "sql"` and `SQL_EXTENSIONS = {'.sql'}` constants in `graphify/detect.py`; add a `detect()` bucket key for SQL files
+- [X] T008 Wire `.sql` files through the detect pipeline: update `graphify/detect.py` so `SQL_EXTENSIONS` files land in the new `sql` bucket, respecting `.graphifyignore` and the existing `graphify-out/` exclusion (T007 prerequisite)
+- [X] T009 [P] Extend `_WATCHED_EXTENSIONS` in `graphify/watch.py` to include `SQL_EXTENSIONS` so watch mode triggers on `.sql` changes
 
 **Checkpoint**: Detection recognizes `.sql`, the `graphify/sql/` subpackage exists with its type model and identifier utilities, and watch mode observes SQL files. User-story phases can now proceed in parallel.
 
@@ -61,23 +61,23 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 
 > Constitution II: tests before implementation. These MUST exist and be red before T016–T023 land.
 
-- [ ] T010 [P] [US1] Write `tests/test_sql_detect.py`: assert `.sql` files are enumerated by `detect()`, assert `.graphifyignore` rules exclude them correctly, assert `graphify-out/*.sql` is always skipped
-- [ ] T011 [P] [US1] Write `tests/test_sql_extract.py`: per-statement-type tests covering CREATE TABLE, ALTER TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW, SELECT (with + without JOIN), INSERT, UPDATE, DELETE, multi-statement file, WITH/CTE (including chained CTEs), foreign-key `REFERENCES`, unqualified-reference default-schema resolution, `parse_status` partial/failed cases, ID stability across re-runs
-- [ ] T012 [P] [US1] Write `tests/test_sql_pipeline.py`: end-to-end detect → extract → build → export on the `tests/fixtures/sql/` tree; assert `graph.json` contents match the Phase 1 expectations from `specs/001-sql-native-support/quickstart.md`
-- [ ] T013 [P] [US1] Write `tests/test_sql_shrink_guard.py`: regression test that `extract_sql` failing for every file does not shrink `graph.json` vs a prior successful run (constitution IV invariant)
+- [X] T010 [P] [US1] Write `tests/test_sql_detect.py`: assert `.sql` files are enumerated by `detect()`, assert `.graphifyignore` rules exclude them correctly, assert `graphify-out/*.sql` is always skipped
+- [X] T011 [P] [US1] Write `tests/test_sql_extract.py`: per-statement-type tests covering CREATE TABLE, ALTER TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW, SELECT (with + without JOIN), INSERT, UPDATE, DELETE, multi-statement file, WITH/CTE (including chained CTEs), foreign-key `REFERENCES`, unqualified-reference default-schema resolution, `parse_status` partial/failed cases, ID stability across re-runs
+- [X] T012 [P] [US1] Write `tests/test_sql_pipeline.py`: end-to-end detect → extract → build → export on the `tests/fixtures/sql/` tree; assert `graph.json` contents match the Phase 1 expectations from `specs/001-sql-native-support/quickstart.md`
+- [X] T013 [P] [US1] Write `tests/test_sql_shrink_guard.py`: regression test that `extract_sql` failing for every file does not shrink `graph.json` vs a prior successful run (constitution IV invariant)
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] Implement the regex-based weak extractor in `graphify/sql/fallback.py` covering `CREATE\s+(TABLE|VIEW|MATERIALIZED VIEW)`, `INSERT\s+INTO`, `UPDATE`, `DELETE\s+FROM`, `FROM\s+<qualified>`; every recovered node/edge tagged `confidence="AMBIGUOUS"` per R-002
-- [ ] T015 [P] [US1] Implement per-statement-type handlers in `graphify/sql/statements.py`: one function per statement type (`handle_create_table`, `handle_create_view`, `handle_create_materialized_view`, `handle_alter_table`, `handle_select`, `handle_insert`, `handle_update`, `handle_delete`, `handle_with`) each emitting the node/edge shapes from `specs/001-sql-native-support/data-model.md`
-- [ ] T016 [US1] Implement the `extract_sql()` entry point in `graphify/sql/extract_sql.py` matching `contracts/extract_sql.md`: file read → SHA256 → `sqlglot.parse(..., error_level=WARN)` → per-statement dispatch to `statements.py` → fallback via `fallback.py` on whole-file failure → assemble `SqlExtractionResult`; respect the `object_level` knob; never raise except `FileNotFoundError` / `ValueError(invalid dialect)` (depends on T005, T006, T014, T015)
-- [ ] T017 [US1] Wire SQL dispatch into `graphify/extract.py`: when a file's extension is `.sql`, route to `graphify.sql.extract_sql.extract_sql()` instead of the tree-sitter dispatcher; merge returned nodes/edges into the result payload that `build.py` already consumes (depends on T016)
+- [X] T014 [P] [US1] Implement the regex-based weak extractor in `graphify/sql/fallback.py` covering `CREATE\s+(TABLE|VIEW|MATERIALIZED VIEW)`, `INSERT\s+INTO`, `UPDATE`, `DELETE\s+FROM`, `FROM\s+<qualified>`; every recovered node/edge tagged `confidence="AMBIGUOUS"` per R-002
+- [X] T015 [P] [US1] Implement per-statement-type handlers in `graphify/sql/statements.py`: one function per statement type (`handle_create_table`, `handle_create_view`, `handle_create_materialized_view`, `handle_alter_table`, `handle_select`, `handle_insert`, `handle_update`, `handle_delete`, `handle_with`) each emitting the node/edge shapes from `specs/001-sql-native-support/data-model.md`
+- [X] T016 [US1] Implement the `extract_sql()` entry point in `graphify/sql/extract_sql.py` matching `contracts/extract_sql.md`: file read → SHA256 → `sqlglot.parse(..., error_level=WARN)` → per-statement dispatch to `statements.py` → fallback via `fallback.py` on whole-file failure → assemble `SqlExtractionResult`; respect the `object_level` knob; never raise except `FileNotFoundError` / `ValueError(invalid dialect)` (depends on T005, T006, T014, T015)
+- [X] T017 [US1] Wire SQL dispatch into `graphify/extract.py`: when a file's extension is `.sql`, route to `graphify.sql.extract_sql.extract_sql()` instead of the tree-sitter dispatcher; merge returned nodes/edges into the result payload that `build.py` already consumes (depends on T016)
 - [ ] T018 [US1] Add `--sql-dialect` (choices: auto/postgres/mysql/sqlite/tsql/oracle/ansi, default `auto`) and `--sql-object-level` (choices: file/statement/column, default `statement`) to `graphify/__main__.py`; thread them through to `extract_sql()` via the detect→extract call site; invalid values produce the actionable error message specified in `contracts/cli_flags.md`
 - [ ] T019 [US1] Add `--sql-lineage` and `--sql-embedded` boolean flags to `graphify/__main__.py` (Phase-3 flags); in Phase 1 they MUST print the informational no-op notice from `contracts/cli_flags.md` and not activate any Phase-3 behavior
-- [ ] T020 [US1] Verify SHA256 cache integration end-to-end: modify `.sql` file, re-run `graphify`, assert only that file is re-extracted (cache hit on others). No new code expected — this is a test-only verification via `tests/test_sql_pipeline.py::test_incremental_cache` (depends on T017)
-- [ ] T021 [US1] Add a rebuild path for `.sql` files in `graphify/watch.py`: extend `_rebuild_code()` or sibling helper to call `extract_sql` for changed `.sql` files on file-change events (depends on T009, T017)
+- [X] T020 [US1] Verify SHA256 cache integration end-to-end: modify `.sql` file, re-run `graphify`, assert only that file is re-extracted (cache hit on others). No new code expected — this is a test-only verification via `tests/test_sql_pipeline.py::test_incremental_cache` (depends on T017)
+- [X] T021 [US1] Add a rebuild path for `.sql` files in `graphify/watch.py`: extend `_rebuild_code()` or sibling helper to call `extract_sql` for changed `.sql` files on file-change events (depends on T009, T017)
 - [ ] T022 [US1] Add `FileType.SQL` handling to `graphify/export.py` only if export emits file-type-specific labels; otherwise no-op (quick audit — may be zero code)
-- [ ] T023 [US1] Add `SqlExtractionResult` and the `extract_sql` symbol to `graphify/__init__.py` public re-exports so `build_merge()` users can call it directly if needed (depends on T016)
+- [X] T023 [US1] Add `SqlExtractionResult` and the `extract_sql` symbol to `graphify/__init__.py` public re-exports so `build_merge()` users can call it directly if needed (depends on T016)
 
 **Checkpoint**: US1 is fully functional. A user can run `graphify .` on a `.sql`-bearing repo and see file / statement / table / view / materialized_view / column / cte nodes with the full Phase-1 edge set. Malformed files degrade. Watch + cache + `.graphifyignore` all work. The full Phase 1 section of `quickstart.md` passes. Tests T010–T013 are green.
 
@@ -91,15 +91,15 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 
 ### Tests for User Story 2 (write first) ⚠️
 
-- [ ] T024 [P] [US2] Write `tests/test_sql_report.py`: against a fixture graph with known counts, assert (a) `## SQL Overview` section present, (b) top-10 most-referenced tables in the documented order, (c) most-mutated rankings correct, (d) views-by-fan-in ordering correct, (e) ≥ 3 SQL-flavored suggested questions, (f) empty-repo case → no `## SQL Overview` heading anywhere, (g) 1000-table corpus produces ≤ 10 rows per table with "and N more" footnote
-- [ ] T025 [P] [US2] Write `tests/test_sql_analyze.py`: assert SQL nodes participate in `god_nodes()` and `surprising_connections()` on the same footing as code nodes
+- [X] T024 [P] [US2] Write `tests/test_sql_report.py`: against a fixture graph with known counts, assert (a) `## SQL Overview` section present, (b) top-10 most-referenced tables in the documented order, (c) most-mutated rankings correct, (d) views-by-fan-in ordering correct, (e) ≥ 3 SQL-flavored suggested questions, (f) empty-repo case → no `## SQL Overview` heading anywhere, (g) 1000-table corpus produces ≤ 10 rows per table with "and N more" footnote
+- [X] T025 [P] [US2] Write `tests/test_sql_analyze.py`: assert SQL nodes participate in `god_nodes()` and `surprising_connections()` on the same footing as code nodes
 
 ### Implementation for User Story 2
 
-- [ ] T026 [P] [US2] Extend `graphify/analyze.py`: update `god_nodes()`, `score_all()` (and any other ranking / hotspot helpers) to include SQL entity types in their candidate set (no special-casing; treat them uniformly)
-- [ ] T027 [US2] Implement the private helper `_render_sql_overview(nodes, edges) -> str | None` in `graphify/report.py` matching `contracts/report_section.md` exactly: returns `None` on zero SQL nodes (omit-on-empty rule FR-025); otherwise returns the markdown block with the four subsections
-- [ ] T028 [US2] Invoke `_render_sql_overview(...)` from `generate()` in `graphify/report.py` between the "God Nodes" and "Surprising Connections" blocks; append the returned string only when not `None` (depends on T027)
-- [ ] T029 [US2] Extend `suggest_questions()` in `graphify/analyze.py` to append ≥ 3 SQL-flavored questions when SQL nodes exist in the graph; append none when they don't (depends on T026)
+- [X] T026 [P] [US2] Extend `graphify/analyze.py`: update `god_nodes()`, `score_all()` (and any other ranking / hotspot helpers) to include SQL entity types in their candidate set (no special-casing; treat them uniformly)
+- [X] T027 [US2] Implement the private helper `_render_sql_overview(nodes, edges) -> str | None` in `graphify/report.py` matching `contracts/report_section.md` exactly: returns `None` on zero SQL nodes (omit-on-empty rule FR-025); otherwise returns the markdown block with the four subsections
+- [X] T028 [US2] Invoke `_render_sql_overview(...)` from `generate()` in `graphify/report.py` between the "God Nodes" and "Surprising Connections" blocks; append the returned string only when not `None` (depends on T027)
+- [X] T029 [US2] Extend `suggest_questions()` in `graphify/analyze.py` to append ≥ 3 SQL-flavored questions when SQL nodes exist in the graph; append none when they don't (depends on T026)
 
 **Checkpoint**: US2 is fully functional on top of US1. Users running `graphify .` on a SQL-bearing repo see the SQL Overview section; users on non-SQL repos see no change to their report. Tests T024–T025 are green. The Phase 2 section of `quickstart.md` passes.
 
