@@ -793,6 +793,9 @@ _CODEX_HOOK = {
 def _install_codex_hook(project_dir: Path) -> None:
     """Add graphify PreToolUse hook to .codex/hooks.json."""
     hooks_path = project_dir / ".codex" / "hooks.json"
+    if hooks_path.parent.exists() and not hooks_path.parent.is_dir():
+        print("  skipping Codex hook registration: .codex exists and is not a directory")
+        return
     hooks_path.parent.mkdir(parents=True, exist_ok=True)
 
     if hooks_path.exists():

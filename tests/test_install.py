@@ -157,6 +157,18 @@ def test_agents_install_appends_to_existing(tmp_path):
     assert "## graphify" in content
 
 
+def test_codex_agents_install_skips_hook_when_dotcodex_is_file(tmp_path, capsys):
+    """codex install should not crash when .codex already exists as a file."""
+    (tmp_path / ".codex").write_text("", encoding="utf-8")
+
+    _agents_install(tmp_path, "codex")
+
+    out = capsys.readouterr().out
+    assert (tmp_path / "AGENTS.md").exists()
+    assert "graphify" in (tmp_path / "AGENTS.md").read_text()
+    assert "skipping codex hook" in out.lower()
+
+
 def test_agents_uninstall_removes_section(tmp_path):
     _agents_install(tmp_path, "codex")
     _agents_uninstall(tmp_path)
