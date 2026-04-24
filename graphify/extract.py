@@ -3397,11 +3397,13 @@ def extract(
     if sql_embedded:
         from .sql.embedded import detect_embedded
 
-        code_paths = [p for p in paths if p.suffix != ".sql"]
+        code_pairs = [(path, result) for path, result in zip(paths, per_file) if path.suffix != ".sql"]
+        code_paths = [path for path, _ in code_pairs]
+        code_results = [result for _, result in code_pairs]
         if code_paths:
             embedded = detect_embedded(
                 code_paths,
-                per_file,
+                code_results,
                 project_root=cache_root or root,
                 sql_dialect=sql_dialect,
                 sql_lineage=sql_lineage,

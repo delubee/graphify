@@ -1,16 +1,84 @@
 from __future__ import annotations
 
 import ast
+import importlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlglot import parse_one
+
+from graphify.extract import _make_id
 
 from . import statements
 from .identifiers import _make_sql_id
 
 
 _SQL_SHAPE = re.compile(r"^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|WITH)\b", re.IGNORECASE)
+_KNOWN_SQL_CALLS = {
+    "exec",
+    "execcontext",
+    "execute",
+    "executemany",
+    "query",
+    "queryrow",
+    "raw",
+    "text",
+}
+
+
+@dataclass(frozen=True)
+class _TreeSitterSpec:
+    ts_module: str
+    ts_language_fn: str
+    class_types: frozenset[str]
+    function_types: frozenset[str]
+    string_types: frozenset[str]
+    arrow_lexical_declarations: bool = False
+    go_package_scope: bool = False
+
+
+_SPECS: dict[str, _TreeSitterSpec] = {
+    ".py": _TreeSitterSpec(
+        ts_module="tree_sitter_python",
+        ts_language_fn="language",
+        class_types=frozenset({"class_definition"}),
+        function_types=frozenset({"function_definition"}),
+        string_types=frozenset({"string", "concatenated_string"}),
+    ),
+    ".js": _TreeSitterSpec(
+        ts_module="tree_sitter_javascript",
+        ts_language_fn="language",
+        class_types=frozenset({"class_declaration"}),
+        function_types=frozenset({"function_declaration", "method_definition"}),
+        string_types=frozenset({"string", "template_string"}),
+        arrow_lexical_declarations=True,
+    ),
+    ".ts": _TreeSitterSpec(
+        ts_module="tree_sitter_typescript",
+        ts_language_fn="language_typescript",
+        class_types=frozenset({"class_declaration", "interface_declaration"}),
+        function_types=frozenset({"function_declaration", "method_definition"}),
+        string_types=frozenset({"string", "template_string"}),
+        arrow_lexical_declarations=True,
+    ),
+    ".tsx": _TreeSitterSpec(
+        ts_module="tree_sitter_typescript",
+        ts_language_fn="language_typescript",
+        class_types=frozenset({"class_declaration", "interface_declaration"}),
+        function_types=frozenset({"function_declaration", "method_definition"}),
+        string_types=frozenset({"string", "template_string"}),
+        arrow_lexical_declarations=True,
+    ),
+    ".go": _TreeSitterSpec(
+        ts_module="tree_sitter_go",
+        ts_language_fn="language",
+        class_types=frozenset(),
+        function_types=frozenset({"function_declaration", "method_declaration"}),
+        string_types=frozenset({"interpreted_string_literal", "raw_string_literal"}),
+        go_package_scope=True,
+    ),
+}
 
 
 def _relative_path(path: Path, project_root: Path | None) -> str:
@@ -20,6 +88,10 @@ def _relative_path(path: Path, project_root: Path | None) -> str:
         return str(path.resolve().relative_to(project_root.resolve()))
     except ValueError:
         return str(path)
+
+
+def _read_text(node, source: bytes) -> str:
+    return source[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
 
 
 def _statement_node(statement_id: str, statement_type: str, sql_text: str, source_file: str, line_start: int, parse_status: str) -> dict:
@@ -41,20 +113,115 @@ def _statement_node(statement_id: str, statement_type: str, sql_text: str, sourc
     }
 
 
-def _call_name(node: ast.AST) -> str | None:
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    if isinstance(node, ast.Name):
-        return node.id
-    return None
+def _load_parser(spec: _TreeSitterSpec):
+    mod = importlib.import_module(spec.ts_module)
+    from tree_sitter import Language, Parser
+
+    lang_fn = getattr(mod, spec.ts_language_fn)
+    language = Language(lang_fn())
+    return Parser(language)
 
 
-def _function_node_id(path: Path, function_name: str, class_stack: list[str]) -> str:
-    stem = path.stem
-    if class_stack:
-        class_id = _make_sql_id(stem, class_stack[-1])
-        return _make_sql_id(class_id, function_name)
-    return _make_sql_id(stem, function_name)
+def _strip_quotes(raw: str) -> str:
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'", "`"}:
+        return raw[1:-1]
+    return raw
+
+
+def _string_value(node, source: bytes, suffix: str) -> str:
+    raw = _read_text(node, source)
+    if suffix == ".py":
+        try:
+            value = ast.literal_eval(raw)
+        except Exception:
+            value = _strip_quotes(raw)
+        return value if isinstance(value, str) else raw
+    if node.type == "template_string":
+        return _strip_quotes(raw)
+    if node.type in {"interpreted_string_literal", "raw_string_literal", "string"}:
+        return _strip_quotes(raw)
+    return raw
+
+
+def _call_name(node, source: bytes):
+    function_node = node.child_by_field_name("function")
+    if function_node is None:
+        return None
+    raw = _read_text(function_node, source).strip()
+    if not raw:
+        return None
+    return raw.split(".")[-1].lower()
+
+
+def _first_argument_strings(node, spec: _TreeSitterSpec):
+    arguments = node.child_by_field_name("arguments")
+    if arguments is None:
+        return []
+    return [child for child in arguments.named_children[:1] if child.type in spec.string_types]
+
+
+def _python_docstring_node(node) -> bool:
+    if node.type not in {"string", "concatenated_string"}:
+        return False
+    parent = node.parent
+    grandparent = parent.parent if parent else None
+    if parent is None or grandparent is None:
+        return False
+    if parent.type != "expression_statement" or grandparent.type not in {"module", "block"}:
+        return False
+    named_children = list(grandparent.named_children)
+    return bool(named_children and named_children[0] == parent)
+
+
+def _python_class_id(node, stem: str, source: bytes) -> str | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+    return _make_id(stem, _read_text(name_node, source))
+
+
+def _python_function_id(node, stem: str, source: bytes, class_id: str | None) -> str | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+    func_name = _read_text(name_node, source)
+    return _make_id(class_id, func_name) if class_id else _make_id(stem, func_name)
+
+
+def _js_class_id(node, stem: str, source: bytes) -> str | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+    return _make_id(stem, _read_text(name_node, source))
+
+
+def _js_function_id(node, stem: str, source: bytes, class_id: str | None) -> str | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+    func_name = _read_text(name_node, source)
+    return _make_id(class_id, func_name) if class_id else _make_id(stem, func_name)
+
+
+def _go_function_id(node, path: Path, source: bytes) -> str | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+    func_name = _read_text(name_node, source)
+    if node.type == "method_declaration":
+        receiver = node.child_by_field_name("receiver")
+        receiver_type: str | None = None
+        if receiver is not None:
+            for child in receiver.named_children:
+                type_node = child.child_by_field_name("type")
+                if type_node is not None:
+                    receiver_type = _read_text(type_node, source).lstrip("*").strip()
+                    break
+        if receiver_type:
+            pkg_scope = path.parent.name or path.stem
+            parent_id = _make_id(pkg_scope, receiver_type)
+            return _make_id(parent_id, func_name)
+    return _make_id(path.stem, func_name)
 
 
 def detect_embedded(
@@ -98,109 +265,148 @@ def detect_embedded(
         edges.append(edge)
 
     for path, result in zip(paths, per_file_results):
-        if path.suffix != ".py":
+        spec = _SPECS.get(path.suffix)
+        if spec is None:
             continue
+        try:
+            parser = _load_parser(spec)
+            source = path.read_bytes()
+            tree = parser.parse(source)
+            root = tree.root_node
+        except Exception:
+            continue
+
         source_file = _relative_path(path, project_root)
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source)
         existing_ids = {node["id"] for node in result.get("nodes", [])}
+        used_string_ranges: set[tuple[int, int]] = set()
+        emitted: set[tuple[str, int, int]] = set()
 
-        class Visitor(ast.NodeVisitor):
-            def __init__(self) -> None:
-                self.class_stack: list[str] = []
-                self.function_stack: list[str] = []
-                self.used_constants: set[int] = set()
-                self.emitted: set[tuple[str, int]] = set()
+        def emit_sql(sql_text: str, line_no: int, start_byte: int, function_id: str | None, confidence: str) -> None:
+            if function_id is None or function_id not in existing_ids or not _SQL_SHAPE.match(sql_text):
+                return
+            dedup_key = (function_id, line_no, start_byte)
+            if dedup_key in emitted:
+                return
+            emitted.add(dedup_key)
 
-            def _emit(self, sql_text: str, line_no: int, confidence: str) -> None:
-                if not self.function_stack or not _SQL_SHAPE.match(sql_text):
-                    return
-                function_id = self.function_stack[-1]
-                if function_id not in existing_ids:
-                    return
-                dedup_key = (function_id, line_no)
-                if dedup_key in self.emitted:
-                    return
-                self.emitted.add(dedup_key)
-                statement_id = _make_sql_id("stmt", source_file, "embedded", function_id, str(line_no))
-                parse_status = "ok"
-                error_message: str | None = None
-                try:
-                    expr = parse_one(sql_text, dialect=read_dialect, error_level="WARN")
-                except Exception as exc:
-                    expr = None
-                    error_message = str(exc)
-                stmt_type = statements.statement_type(expr, sql_text) if expr is not None else "UNKNOWN"
-                if expr is None or stmt_type == "UNKNOWN":
+            statement_id = _make_sql_id("stmt", source_file, "embedded", function_id, str(line_no), str(start_byte))
+            parse_status = "ok"
+            error_message: str | None = None
+            try:
+                expr = parse_one(sql_text, dialect=read_dialect, error_level="IGNORE")
+            except Exception as exc:
+                expr = None
+                error_message = str(exc)
+
+            stmt_type = statements.statement_type(expr, sql_text) if expr is not None else "UNKNOWN"
+            if expr is None or stmt_type == "UNKNOWN":
+                parse_status = "failed"
+                confidence = "AMBIGUOUS"
+            elif stmt_type in {"SELECT", "WITH"}:
+                tables = list(expr.find_all(statements.exp.Table))
+                if not tables or any(not getattr(table.this, "name", "") for table in tables):
                     parse_status = "failed"
                     confidence = "AMBIGUOUS"
-                elif stmt_type in {"SELECT", "WITH"}:
-                    tables = list(expr.find_all(statements.exp.Table))
-                    if not tables or any(not getattr(table.this, "name", "") for table in tables):
-                        parse_status = "failed"
-                        confidence = "AMBIGUOUS"
 
-                stmt_node = _statement_node(statement_id, stmt_type, sql_text, source_file, line_no, parse_status)
-                if error_message:
-                    stmt_node["error"] = error_message
-                add_node(stmt_node)
-                add_edge({
-                    "source": function_id,
-                    "target": statement_id,
-                    "relation": "executes",
-                    "confidence": confidence,
-                    "source_file": source_file,
-                    "source_location": f"L{line_no}",
-                    "weight": 1.0,
-                })
-                if parse_status == "failed":
+            stmt_node = _statement_node(statement_id, stmt_type, sql_text, source_file, line_no, parse_status)
+            if error_message:
+                stmt_node["error"] = error_message
+            add_node(stmt_node)
+            add_edge({
+                "source": function_id,
+                "target": statement_id,
+                "relation": "executes",
+                "confidence": confidence,
+                "source_file": source_file,
+                "source_location": f"L{line_no}",
+                "weight": 1.0,
+            })
+            if parse_status == "failed":
+                return
+            handler = handler_map.get(stmt_type)
+            if handler is None:
+                return
+            stmt_nodes, stmt_edges = handler(
+                expr,
+                statement_id=statement_id,
+                file_id="",
+                default_schema="public",
+                source_file=source_file,
+                line_start=line_no,
+                object_level="column" if sql_lineage else "statement",
+                lineage=sql_lineage,
+            )
+            for node in stmt_nodes:
+                add_node(node)
+            for edge in stmt_edges:
+                add_edge(edge)
+
+        def walk(node, current_class_id: str | None = None, current_function_id: str | None = None) -> None:
+            node_type = node.type
+
+            if spec.ts_module == "tree_sitter_python" and node_type in spec.class_types:
+                class_id = _python_class_id(node, path.stem, source)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    for child in body.children:
+                        walk(child, class_id, None)
+                return
+
+            if spec.ts_module in {"tree_sitter_javascript", "tree_sitter_typescript"} and node_type in spec.class_types:
+                class_id = _js_class_id(node, path.stem, source)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    for child in body.children:
+                        walk(child, class_id, None)
+                return
+
+            if node_type in spec.function_types:
+                if spec.go_package_scope:
+                    function_id = _go_function_id(node, path, source)
+                elif spec.ts_module == "tree_sitter_python":
+                    function_id = _python_function_id(node, path.stem, source, current_class_id)
+                else:
+                    function_id = _js_function_id(node, path.stem, source, current_class_id)
+                body = node.child_by_field_name("body")
+                if body is not None:
+                    walk(body, current_class_id, function_id)
+                return
+
+            if spec.arrow_lexical_declarations and node_type == "lexical_declaration":
+                handled_arrow = False
+                for child in node.named_children:
+                    if child.type != "variable_declarator":
+                        continue
+                    value = child.child_by_field_name("value")
+                    name_node = child.child_by_field_name("name")
+                    if value is None or value.type != "arrow_function" or name_node is None:
+                        continue
+                    handled_arrow = True
+                    function_id = _make_id(path.stem, _read_text(name_node, source))
+                    body = value.child_by_field_name("body")
+                    if body is not None:
+                        walk(body, current_class_id, function_id)
+                if handled_arrow:
                     return
-                handler = handler_map.get(stmt_type)
-                if handler is None:
-                    return
-                stmt_nodes, stmt_edges = handler(
-                    expr,
-                    statement_id=statement_id,
-                    file_id="",
-                    default_schema="public",
-                    source_file=source_file,
-                    line_start=line_no,
-                    object_level="column" if sql_lineage else "statement",
-                    lineage=sql_lineage,
-                )
-                for node in stmt_nodes:
-                    add_node(node)
-                for edge in stmt_edges:
-                    add_edge(edge)
 
-            def visit_ClassDef(self, node: ast.ClassDef) -> None:
-                self.class_stack.append(node.name)
-                self.generic_visit(node)
-                self.class_stack.pop()
+            if current_function_id is not None and node_type in {"call", "call_expression"}:
+                call_name = _call_name(node, source)
+                if call_name in _KNOWN_SQL_CALLS:
+                    for arg in _first_argument_strings(node, spec):
+                        sql_text = _string_value(arg, source, path.suffix)
+                        used_string_ranges.add((arg.start_byte, arg.end_byte))
+                        emit_sql(sql_text, arg.start_point[0] + 1, arg.start_byte, current_function_id, "INFERRED")
 
-            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-                self.function_stack.append(_function_node_id(path, node.name, self.class_stack))
-                self.generic_visit(node)
-                self.function_stack.pop()
+            if current_function_id is not None and node_type in spec.string_types:
+                string_range = (node.start_byte, node.end_byte)
+                if string_range not in used_string_ranges:
+                    if not (spec.ts_module == "tree_sitter_python" and _python_docstring_node(node)):
+                        sql_text = _string_value(node, source, path.suffix)
+                        emit_sql(sql_text, node.start_point[0] + 1, node.start_byte, current_function_id, "AMBIGUOUS")
 
-            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-                self.function_stack.append(_function_node_id(path, node.name, self.class_stack))
-                self.generic_visit(node)
-                self.function_stack.pop()
+            for child in node.children:
+                walk(child, current_class_id, current_function_id)
 
-            def visit_Call(self, node: ast.Call) -> None:
-                call_name = _call_name(node.func)
-                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-                    sql_text = node.args[0].value
-                    if call_name in {"execute", "executemany", "query", "raw", "text"}:
-                        self.used_constants.add(id(node.args[0]))
-                        self._emit(sql_text, node.lineno, "INFERRED")
-                self.generic_visit(node)
-
-            def visit_Constant(self, node: ast.Constant) -> None:
-                if isinstance(node.value, str) and id(node) not in self.used_constants:
-                    self._emit(node.value, node.lineno, "AMBIGUOUS")
-
-        Visitor().visit(tree)
+        walk(root)
 
     return {"nodes": nodes, "edges": edges}
