@@ -157,6 +157,8 @@ def extract_sql(
         "CREATE_TABLE": statements.handle_create_table,
         "CREATE_VIEW": statements.handle_create_view,
         "CREATE_MATERIALIZED_VIEW": statements.handle_create_materialized_view,
+        "CREATE_FUNCTION": statements.handle_create_function,
+        "CREATE_PROCEDURE": statements.handle_create_procedure,
         "ALTER_TABLE": statements.handle_alter_table,
         "SELECT": statements.handle_select,
         "WITH": statements.handle_with,
@@ -223,6 +225,7 @@ def extract_sql(
             source_file=source_file,
             line_start=line_start,
             object_level=object_level,
+            lineage=lineage,
         )
         for node in stmt_nodes:
             add_node(node)

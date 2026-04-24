@@ -14,6 +14,74 @@ except Exception:
     __version__ = "unknown"
 
 
+_VALID_SQL_DIALECTS = ("auto", "postgres", "mysql", "sqlite", "tsql", "oracle", "ansi")
+_VALID_SQL_OBJECT_LEVELS = ("file", "statement", "column")
+
+
+def _parse_sql_options(args: list[str]) -> dict[str, object]:
+    options: dict[str, object] = {
+        "sql_dialect": "auto",
+        "sql_object_level": "statement",
+        "sql_lineage": False,
+        "sql_embedded": False,
+    }
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--sql-lineage":
+            options["sql_lineage"] = True
+            i += 1
+            continue
+        if arg == "--sql-embedded":
+            options["sql_embedded"] = True
+            i += 1
+            continue
+        if arg == "--sql-dialect":
+            if i + 1 >= len(args):
+                raise ValueError("error: --sql-dialect requires a value")
+            value = args[i + 1]
+            if value not in _VALID_SQL_DIALECTS:
+                valid = ", ".join(_VALID_SQL_DIALECTS)
+                raise ValueError(f"error: invalid --sql-dialect value '{value}'. valid: {valid}")
+            options["sql_dialect"] = value
+            i += 2
+            continue
+        if arg.startswith("--sql-dialect="):
+            value = arg.split("=", 1)[1]
+            if value not in _VALID_SQL_DIALECTS:
+                valid = ", ".join(_VALID_SQL_DIALECTS)
+                raise ValueError(f"error: invalid --sql-dialect value '{value}'. valid: {valid}")
+            options["sql_dialect"] = value
+            i += 1
+            continue
+        if arg == "--sql-object-level":
+            if i + 1 >= len(args):
+                raise ValueError("error: --sql-object-level requires a value")
+            value = args[i + 1]
+            if value not in _VALID_SQL_OBJECT_LEVELS:
+                valid = ", ".join(_VALID_SQL_OBJECT_LEVELS)
+                raise ValueError(f"error: invalid --sql-object-level value '{value}'. valid: {valid}")
+            options["sql_object_level"] = value
+            i += 2
+            continue
+        if arg.startswith("--sql-object-level="):
+            value = arg.split("=", 1)[1]
+            if value not in _VALID_SQL_OBJECT_LEVELS:
+                valid = ", ".join(_VALID_SQL_OBJECT_LEVELS)
+                raise ValueError(f"error: invalid --sql-object-level value '{value}'. valid: {valid}")
+            options["sql_object_level"] = value
+            i += 1
+            continue
+        raise ValueError(f"error: unknown SQL flag '{arg}'")
+    return options
+
+
+def _split_path_and_sql_args(args: list[str]) -> tuple[Path, dict[str, object]]:
+    path = Path(args[0]) if args and not args[0].startswith("--") else Path(".")
+    sql_args = args[1:] if args and not args[0].startswith("--") else args
+    return path, _parse_sql_options(sql_args)
+
+
 def _check_skill_version(skill_dst: Path) -> None:
     """Warn if the installed skill is from an older graphify version."""
     version_file = skill_dst.parent / ".graphify_version"
@@ -1357,13 +1425,17 @@ def main() -> None:
             sys.exit(1)
 
     elif cmd == "watch":
-        watch_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(".")
+        try:
+            watch_path, sql_options = _split_path_and_sql_args(sys.argv[2:])
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
         if not watch_path.exists():
             print(f"error: path not found: {watch_path}", file=sys.stderr)
             sys.exit(1)
         from graphify.watch import watch as _watch
         try:
-            _watch(watch_path)
+            _watch(watch_path, **sql_options)
         except ImportError as exc:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -1402,13 +1474,17 @@ def main() -> None:
         print(f"Done — {len(communities)} communities. GRAPH_REPORT.md, graph.json and graph.html updated.")
 
     elif cmd == "update":
-        watch_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path(".")
+        try:
+            watch_path, sql_options = _split_path_and_sql_args(sys.argv[2:])
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
         if not watch_path.exists():
             print(f"error: path not found: {watch_path}", file=sys.stderr)
             sys.exit(1)
         from graphify.watch import _rebuild_code
         print(f"Re-extracting code files in {watch_path} (no LLM needed)...")
-        ok = _rebuild_code(watch_path)
+        ok = _rebuild_code(watch_path, **sql_options)
         if ok:
             print("Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.")
         else:

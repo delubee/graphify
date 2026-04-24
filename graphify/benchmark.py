@@ -1,6 +1,8 @@
 """Token-reduction benchmark - measures how much context graphify saves vs naive full-corpus approach."""
 from __future__ import annotations
 import json
+import shutil
+import time
 from pathlib import Path
 import networkx as nx
 from networkx.readwrite import json_graph
@@ -59,6 +61,114 @@ _SAMPLE_QUESTIONS = [
     "what connects the data layer to the api",
     "what are the core abstractions",
 ]
+
+
+def prepare_sql_benchmark_corpora(
+    no_sql_root: str | Path,
+    with_sql_root: str | Path,
+    *,
+    code_file_count: int = 240,
+    sql_statements: int = 40,
+) -> None:
+    """Create synthetic corpora for SQL performance comparisons.
+
+    `no_sql_root` contains only Python files.
+    `with_sql_root` contains the same Python files plus one `.sql` file.
+    """
+    no_sql_root = Path(no_sql_root)
+    with_sql_root = Path(with_sql_root)
+    for root in (no_sql_root, with_sql_root):
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True, exist_ok=True)
+
+    for idx in range(code_file_count):
+        rel = Path("pkg") / f"mod_{idx}.py"
+        body = (
+            f"def func_{idx}(value: int) -> int:\n"
+            f"    total = value + {idx}\n"
+            f"    for step in range(3):\n"
+            f"        total += step\n"
+            f"    return total\n"
+        )
+        for root in (no_sql_root, with_sql_root):
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+
+    sql_lines = []
+    for idx in range(sql_statements):
+        sql_lines.append(f"CREATE TABLE bench_{idx} (id INTEGER PRIMARY KEY, value TEXT);")
+        sql_lines.append(f"INSERT INTO bench_{idx} (id, value) VALUES ({idx}, 'value {idx}');")
+    sql_path = with_sql_root / "db" / "benchmark.sql"
+    sql_path.parent.mkdir(parents=True, exist_ok=True)
+    sql_path.write_text("\n".join(sql_lines) + "\n", encoding="utf-8")
+
+
+def prepare_sql_corpus(root: str | Path, *, file_count: int = 500, total_statements: int = 50_000) -> None:
+    """Create a large SQL-only corpus for stress benchmarks."""
+    root = Path(root)
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True, exist_ok=True)
+
+    per_file = max(1, total_statements // file_count)
+    stmt_idx = 0
+    for file_idx in range(file_count):
+        path = root / "sql" / f"batch_{file_idx:03d}.sql"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines: list[str] = []
+        for _ in range(per_file):
+            lines.append(f"CREATE TABLE bench_{stmt_idx} (id INTEGER PRIMARY KEY, value TEXT);")
+            stmt_idx += 1
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def measure_corpus_runtime(root: str | Path, *, repeats: int = 2) -> dict:
+    """Measure detect+extract wall clock and peak RSS for a local corpus."""
+    from graphify.detect import detect
+    from graphify.extract import extract
+
+    root = Path(root)
+    wall_clock_samples: list[float] = []
+    peak_rss_samples: list[int] = []
+
+    for idx in range(repeats):
+        start = time.perf_counter()
+        detection = detect(root)
+        files = [Path(path) for bucket in detection["files"].values() for path in bucket if path.endswith((".py", ".sql"))]
+        cache_root = root / f".bench-cache-{idx}"
+        extract(files, cache_root=cache_root)
+        wall_clock_samples.append(time.perf_counter() - start)
+        try:
+            import resource
+
+            peak_rss_samples.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        except Exception:
+            pass
+        shutil.rmtree(cache_root, ignore_errors=True)
+
+    return {
+        "wall_clock_s": min(wall_clock_samples) if wall_clock_samples else 0.0,
+        "peak_rss_kb": max(peak_rss_samples) if peak_rss_samples else None,
+    }
+
+
+def run_sql_support_benchmarks(base_root: str | Path) -> dict:
+    """Generate and measure the SQL support benchmark corpora."""
+    base_root = Path(base_root)
+    sql_corpus_root = base_root / "sql_corpus"
+    no_sql_root = base_root / "mixed_corpus_no_sql"
+    with_sql_root = base_root / "mixed_corpus_with_sql_added"
+
+    prepare_sql_corpus(sql_corpus_root)
+    prepare_sql_benchmark_corpora(no_sql_root, with_sql_root)
+
+    return {
+        "sql_corpus": measure_corpus_runtime(sql_corpus_root, repeats=1),
+        "mixed_corpus_no_sql": measure_corpus_runtime(no_sql_root, repeats=2),
+        "mixed_corpus_with_sql_added": measure_corpus_runtime(with_sql_root, repeats=2),
+    }
 
 
 def run_benchmark(

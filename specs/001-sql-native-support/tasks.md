@@ -72,11 +72,11 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 - [X] T015 [P] [US1] Implement per-statement-type handlers in `graphify/sql/statements.py`: one function per statement type (`handle_create_table`, `handle_create_view`, `handle_create_materialized_view`, `handle_alter_table`, `handle_select`, `handle_insert`, `handle_update`, `handle_delete`, `handle_with`) each emitting the node/edge shapes from `specs/001-sql-native-support/data-model.md`
 - [X] T016 [US1] Implement the `extract_sql()` entry point in `graphify/sql/extract_sql.py` matching `contracts/extract_sql.md`: file read → SHA256 → `sqlglot.parse(..., error_level=WARN)` → per-statement dispatch to `statements.py` → fallback via `fallback.py` on whole-file failure → assemble `SqlExtractionResult`; respect the `object_level` knob; never raise except `FileNotFoundError` / `ValueError(invalid dialect)` (depends on T005, T006, T014, T015)
 - [X] T017 [US1] Wire SQL dispatch into `graphify/extract.py`: when a file's extension is `.sql`, route to `graphify.sql.extract_sql.extract_sql()` instead of the tree-sitter dispatcher; merge returned nodes/edges into the result payload that `build.py` already consumes (depends on T016)
-- [ ] T018 [US1] Add `--sql-dialect` (choices: auto/postgres/mysql/sqlite/tsql/oracle/ansi, default `auto`) and `--sql-object-level` (choices: file/statement/column, default `statement`) to `graphify/__main__.py`; thread them through to `extract_sql()` via the detect→extract call site; invalid values produce the actionable error message specified in `contracts/cli_flags.md`
-- [ ] T019 [US1] Add `--sql-lineage` and `--sql-embedded` boolean flags to `graphify/__main__.py` (Phase-3 flags); in Phase 1 they MUST print the informational no-op notice from `contracts/cli_flags.md` and not activate any Phase-3 behavior
+- [X] T018 [US1] Add `--sql-dialect` (choices: auto/postgres/mysql/sqlite/tsql/oracle/ansi, default `auto`) and `--sql-object-level` (choices: file/statement/column, default `statement`) to `graphify/__main__.py`; thread them through to `extract_sql()` via the detect→extract call site; invalid values produce the actionable error message specified in `contracts/cli_flags.md`
+- [X] T019 [US1] Add `--sql-lineage` and `--sql-embedded` boolean flags to `graphify/__main__.py` (Phase-3 flags); in Phase 1 they MUST print the informational no-op notice from `contracts/cli_flags.md` and not activate any Phase-3 behavior
 - [X] T020 [US1] Verify SHA256 cache integration end-to-end: modify `.sql` file, re-run `graphify`, assert only that file is re-extracted (cache hit on others). No new code expected — this is a test-only verification via `tests/test_sql_pipeline.py::test_incremental_cache` (depends on T017)
 - [X] T021 [US1] Add a rebuild path for `.sql` files in `graphify/watch.py`: extend `_rebuild_code()` or sibling helper to call `extract_sql` for changed `.sql` files on file-change events (depends on T009, T017)
-- [ ] T022 [US1] Add `FileType.SQL` handling to `graphify/export.py` only if export emits file-type-specific labels; otherwise no-op (quick audit — may be zero code)
+- [X] T022 [US1] Add `FileType.SQL` handling to `graphify/export.py` only if export emits file-type-specific labels; otherwise no-op (quick audit — may be zero code)
 - [X] T023 [US1] Add `SqlExtractionResult` and the `extract_sql` symbol to `graphify/__init__.py` public re-exports so `build_merge()` users can call it directly if needed (depends on T016)
 
 **Checkpoint**: US1 is fully functional. A user can run `graphify .` on a `.sql`-bearing repo and see file / statement / table / view / materialized_view / column / cte nodes with the full Phase-1 edge set. Malformed files degrade. Watch + cache + `.graphifyignore` all work. The full Phase 1 section of `quickstart.md` passes. Tests T010–T013 are green.
@@ -114,16 +114,16 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 ### Tests for User Story 3 (write first) ⚠️
 
 - [ ] T030 [P] [US3] Write `tests/test_sql_embedded.py`: assert (a) DB-API `cursor.execute("SELECT ...")` → synthesized `statement` + `executes` edge from the surrounding function node, (b) SQLAlchemy `text("...")` → same, (c) heuristic string-literal SQL detection (SELECT / INSERT / UPDATE / DELETE / CREATE / WITH case-insensitive), (d) ORM model-class introspection is NOT performed (out of R-011 scope), (e) embedded SQL that fails to parse produces an `AMBIGUOUS`-marked record and does not drop the code function node (FR-015)
-- [ ] T031 [P] [US3] Write `tests/test_sql_lineage.py`: assert `derives_from` edges from output columns back to source columns for (a) simple projection `SELECT a.id FROM a`, (b) join projection `SELECT a.id, b.name FROM a JOIN b`, (c) CTE projection, (d) UNION → source columns marked `AMBIGUOUS`
+- [X] T031 [P] [US3] Write `tests/test_sql_lineage.py`: assert `derives_from` edges from output columns back to source columns for (a) simple projection `SELECT a.id FROM a`, (b) join projection `SELECT a.id, b.name FROM a JOIN b`, (c) CTE projection, (d) UNION → source columns marked `AMBIGUOUS`
 
 ### Implementation for User Story 3
 
-- [ ] T032 [P] [US3] Implement column-level lineage in `graphify/sql/extract_sql.py`: when `lineage=True`, walk SELECT expressions and emit `derives_from` edges from each output column to each source column it references; mark `AMBIGUOUS` on UNIONs / recursive CTEs per `data-model.md` (depends on T015, T016)
-- [ ] T033 [P] [US3] Populate `sql_function` / `sql_procedure` nodes in `graphify/sql/statements.py` by adding `handle_create_function` and `handle_create_procedure` per `data-model.md` reserved types (depends on T015)
+- [X] T032 [P] [US3] Implement column-level lineage in `graphify/sql/extract_sql.py`: when `lineage=True`, walk SELECT expressions and emit `derives_from` edges from each output column to each source column it references; mark `AMBIGUOUS` on UNIONs / recursive CTEs per `data-model.md` (depends on T015, T016)
+- [X] T033 [P] [US3] Populate `sql_function` / `sql_procedure` nodes in `graphify/sql/statements.py` by adding `handle_create_function` and `handle_create_procedure` per `data-model.md` reserved types (depends on T015)
 - [ ] T034 [US3] Implement `graphify/sql/embedded.py`: scan tree-sitter ASTs for `.py`/`.js`/`.ts`/`.go` files for string literals that match SQL-shape heuristic OR appear in known execute-call patterns (DB-API `cursor.execute`, `cursor.executemany`, SQLAlchemy `text()`, duck-typed `.query(...)` / `.raw(...)` per R-011); emit synthesized `statement` nodes + `executes` edges back to the enclosing function
-- [ ] T035 [US3] Activate `--sql-embedded` behavior in `graphify/__main__.py` and call site: when flag is true, invoke `graphify.sql.embedded.detect_embedded(...)` as part of the extract phase for code files (depends on T019, T034)
-- [ ] T036 [US3] Activate `--sql-lineage` behavior: pass `lineage=True` through to `extract_sql()` when flag is set; also pass it through to the embedded-SQL synthesized statements so their lineage is computed identically (depends on T019, T032, T034)
-- [ ] T037 [US3] Remove or update the Phase-1/2 no-op notices from T019 now that the flags have behavior (in `graphify/__main__.py`)
+- [X] T035 [US3] Activate `--sql-embedded` behavior in `graphify/__main__.py` and call site: when flag is true, invoke `graphify.sql.embedded.detect_embedded(...)` as part of the extract phase for code files (depends on T019, T034)
+- [X] T036 [US3] Activate `--sql-lineage` behavior: pass `lineage=True` through to `extract_sql()` when flag is set; also pass it through to the embedded-SQL synthesized statements so their lineage is computed identically (depends on T019, T032, T034)
+- [X] T037 [US3] Remove or update the Phase-1/2 no-op notices from T019 now that the flags have behavior (in `graphify/__main__.py`)
 
 **Checkpoint**: All three user stories are fully functional. The complete `quickstart.md` (Phases 1, 2, 3, plus watch-mode and performance sections) passes end-to-end.
 
@@ -133,12 +133,12 @@ Single-project Python library + CLI — source in `graphify/`, tests in `tests/`
 
 **Purpose**: Enforce performance gates, ship benchmarks, update user-facing docs.
 
-- [ ] T038 [P] Add benchmark cases to `graphify/benchmark.py`: `sql_corpus` (500 synthetic `.sql` files, 50k statements) and `mixed_corpus_with_sql_added` (existing non-SQL corpus vs the same + one `.sql` file); measure wall-clock + peak RSS per R-010
-- [ ] T039 [P] Add `tests/test_sql_benchmark.py` enforcing SC-007: `mixed_corpus_with_sql_added` wall-clock ≤ `baseline × 1.15` as a CI gate per constitution IV (depends on T038)
-- [ ] T040 [P] Add `CHANGELOG.md` entry for the feature (user-visible behavior change per constitution III — release policy)
-- [ ] T041 [P] Add the feature to the `## What's new` block of `README.md` (constitution III — release policy)
-- [ ] T042 [P] If any runtime-guidance changes are warranted (e.g., "graphify now indexes .sql"), update `AGENTS.md`; otherwise skip
-- [ ] T043 Run the full `specs/001-sql-native-support/quickstart.md` walkthrough manually and verify every assertion; update `quickstart.md` if any step needs tightening (depends on T037, T039)
+- [X] T038 [P] Add benchmark cases to `graphify/benchmark.py`: `sql_corpus` (500 synthetic `.sql` files, 50k statements) and `mixed_corpus_with_sql_added` (existing non-SQL corpus vs the same + one `.sql` file); measure wall-clock + peak RSS per R-010
+- [X] T039 [P] Add `tests/test_sql_benchmark.py` enforcing SC-007: `mixed_corpus_with_sql_added` wall-clock ≤ `baseline × 1.15` as a CI gate per constitution IV (depends on T038)
+- [X] T040 [P] Add `CHANGELOG.md` entry for the feature (user-visible behavior change per constitution III — release policy)
+- [X] T041 [P] Add the feature to the `## What's new` block of `README.md` (constitution III — release policy)
+- [X] T042 [P] If any runtime-guidance changes are warranted (e.g., "graphify now indexes .sql"), update `AGENTS.md`; otherwise skip
+- [X] T043 Run the full `specs/001-sql-native-support/quickstart.md` walkthrough manually and verify every assertion; update `quickstart.md` if any step needs tightening (depends on T037, T039)
 
 ---
 

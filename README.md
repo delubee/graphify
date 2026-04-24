@@ -52,6 +52,7 @@ Same syntax as `.gitignore`. You can keep a single `.graphifyignore` at your rep
 
 ## What's new in v0.5.0
 
+- **SQL support** — `.sql` files are now first-class graph inputs. graphify detects them, extracts tables/views/statements/CTEs, includes SQL hotspots in `GRAPH_REPORT.md`, and supports SQL-specific flags on `graphify update` / `graphify watch`.
 - **`graphify clone <github-url>`** — clone any public GitHub repo and run the full pipeline on it. Clones to `~/.graphify/repos/<owner>/<repo>`, reuses existing clones on repeat runs (`git pull`). Supports `--branch` and `--out`.
 - **`graphify merge-graphs`** — combine two or more `graph.json` outputs into one cross-repo graph. Each node is tagged with its source repo. Useful for mapping dependencies across multiple projects.
 - **`CLAUDE_CONFIG_DIR` support** — `graphify install` now respects the `CLAUDE_CONFIG_DIR` environment variable when installing the Claude Code skill, instead of always writing to `~/.claude`.

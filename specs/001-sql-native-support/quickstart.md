@@ -77,7 +77,7 @@ Run extraction:
 
 ```bash
 cd /tmp/graphify-sql-quickstart
-graphify .
+graphify update .
 ```
 
 **Expected**:
@@ -113,8 +113,8 @@ graphify .
 5. `depends_on` edge `active_users → users` and `active_users → orders`:
 
    ```bash
-   jq '.edges | map(select(.relation == "depends_on"))' graphify-out/graph.json
-   # Expect: at least two edges from view:public_active_users to table:public_users and table:public_orders
+   jq '.links | map(select(.relation == "depends_on" and ._src == "view_public_active_users")) | map(._tgt) | sort' graphify-out/graph.json
+   # Expect: ["table_public_orders", "table_public_users"]
    ```
 
 6. CTE node for `recent_orders`:
@@ -140,12 +140,12 @@ graphify .
    ```bash
    echo "db/queries/" > .graphifyignore
    rm -rf graphify-out/
-   graphify .
+   graphify update .
    jq '.nodes | map(select(.label | startswith("db/queries/"))) | length' graphify-out/graph.json
    # Expect: 0
    ```
 
-9. **Cache hit on re-run**: `graphify .` a second time is near-instant (cache
+9. **Cache hit on re-run**: `graphify update .` a second time is near-instant (cache
    hits). No new nodes.
 
 ## Phase 2 validation — Analysis & Report (US2)
@@ -153,7 +153,7 @@ graphify .
 ```bash
 cd /tmp/graphify-sql-quickstart
 rm -rf graphify-out/ .graphifyignore
-graphify .
+graphify update .
 cat graphify-out/GRAPH_REPORT.md | head -200
 ```
 
@@ -166,7 +166,7 @@ cat graphify-out/GRAPH_REPORT.md | head -200
 4. It contains `### Views by dependency fan-in` with `public.active_users`
    (depends on `users` and `orders`, fan-in = 2).
 5. The `Suggested Questions` block contains at least 3 SQL-oriented questions.
-6. On a repo with no `.sql` files (try `graphify /tmp/empty-repo`), the
+6. On a repo with no `.sql` files (try `graphify update /tmp/empty-repo`), the
    `## SQL Overview` section is **absent** from `GRAPH_REPORT.md`.
 
 ## Phase 3 validation — Embedded SQL & Column Lineage (US3)
@@ -189,7 +189,7 @@ GROUP BY o.user_id;
 SQL
 
 rm -rf graphify-out/
-graphify . --sql-embedded --sql-lineage
+graphify update . --sql-embedded --sql-lineage
 ```
 
 **Expected**:
@@ -198,25 +198,26 @@ graphify . --sql-embedded --sql-lineage
    `statement` node:
 
    ```bash
-   jq '.edges | map(select(.relation == "executes"))' graphify-out/graph.json
+   jq '.links | map(select(.relation == "executes"))' graphify-out/graph.json
    # Expect: at least one edge ending at a statement node whose text_snippet starts with "SELECT email FROM users"
    ```
 
 2. A `selects_from` edge from that synthesized statement to `table:public_users`:
 
    ```bash
-   # Traverse: recent_emails --executes--> stmt --selects_from--> table:public_users
+   jq '.links | map(select(.relation == "selects_from" and (._src | startswith("stmt_app_py_embedded_app_recent_emails_")) and ._tgt == "table_public_users"))' graphify-out/graph.json
+   # Expect: at least one entry
    ```
 
 3. A `derives_from` edge from `column:public_monthly_revenue_total` to
    `column:public_orders_total_cents`:
 
    ```bash
-   jq '.edges | map(select(.relation == "derives_from"))' graphify-out/graph.json
+   jq '.links | map(select(.relation == "derives_from" and ._src == "col_public_monthly_revenue_total" and ._tgt == "col_public_orders_total_cents"))' graphify-out/graph.json
    # Expect: at least one such edge
    ```
 
-4. With the flags **omitted** (bare `graphify .`), none of the above
+4. With the flags **omitted** (bare `graphify update .`), none of the above
    edges/nodes are produced — Phase 3 is opt-in only.
 
 ## Performance validation (SC-007)
@@ -226,10 +227,10 @@ graphify . --sql-embedded --sql-lineage
 python .specify/scripts/prepare_sql_benchmark.py /tmp/bench-nosql /tmp/bench-withsql
 
 # Baseline (no-sql)
-time graphify /tmp/bench-nosql
+time graphify update /tmp/bench-nosql
 
 # With SQL
-time graphify /tmp/bench-withsql
+time graphify update /tmp/bench-withsql
 ```
 
 **Expected**: `bench-withsql` wall-clock ≤ `bench-nosql` × 1.15 (15% ceiling

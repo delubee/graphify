@@ -33,7 +33,15 @@ def _relativize_source_files(payload: dict, root: Path) -> None:
                 continue
 
 
-def _rebuild_code(watch_path: Path, *, follow_symlinks: bool = False) -> bool:
+def _rebuild_code(
+    watch_path: Path,
+    *,
+    follow_symlinks: bool = False,
+    sql_dialect: str = "auto",
+    sql_object_level: str = "statement",
+    sql_lineage: bool = False,
+    sql_embedded: bool = False,
+) -> bool:
     """Re-run AST extraction + build + cluster + report for code and SQL files. No LLM needed.
 
     Returns True on success, False on error.
@@ -59,7 +67,14 @@ def _rebuild_code(watch_path: Path, *, follow_symlinks: bool = False) -> bool:
             print("[graphify watch] No code or SQL files found - nothing to rebuild.")
             return False
 
-        result = extract(extract_files, cache_root=watch_root)
+        result = extract(
+            extract_files,
+            cache_root=watch_root,
+            sql_dialect=sql_dialect,
+            sql_object_level=sql_object_level,
+            sql_lineage=sql_lineage,
+            sql_embedded=sql_embedded,
+        )
 
         # Preserve semantic nodes/edges from a previous full run.
         # AST-only rebuild replaces code nodes; doc/paper/image nodes are kept.
@@ -164,7 +179,15 @@ def _has_non_code(changed_paths: list[Path]) -> bool:
     return any(p.suffix.lower() not in _CODE_EXTENSIONS for p in changed_paths)
 
 
-def watch(watch_path: Path, debounce: float = 3.0) -> None:
+def watch(
+    watch_path: Path,
+    debounce: float = 3.0,
+    *,
+    sql_dialect: str = "auto",
+    sql_object_level: str = "statement",
+    sql_lineage: bool = False,
+    sql_embedded: bool = False,
+) -> None:
     """
     Watch watch_path for new or modified files and auto-update the graph.
 
@@ -224,7 +247,13 @@ def watch(watch_path: Path, debounce: float = 3.0) -> None:
                 if _has_non_code(batch):
                     _notify_only(watch_path)
                 else:
-                    _rebuild_code(watch_path)
+                    _rebuild_code(
+                        watch_path,
+                        sql_dialect=sql_dialect,
+                        sql_object_level=sql_object_level,
+                        sql_lineage=sql_lineage,
+                        sql_embedded=sql_embedded,
+                    )
     except KeyboardInterrupt:
         print("\n[graphify watch] Stopped.")
     finally:

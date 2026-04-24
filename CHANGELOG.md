@@ -2,6 +2,12 @@
 
 Full release notes with details on each version: [GitHub Releases](https://github.com/safishamsi/graphify/releases)
 
+## Unreleased
+
+- Feat: first-class SQL extraction path — `.sql` files are now detected, extracted, cached, watched, and included in `GRAPH_REPORT.md` with a SQL Overview section
+- Feat: SQL CLI plumbing for `graphify update` and `graphify watch` — `--sql-dialect`, `--sql-object-level`, `--sql-lineage`, and `--sql-embedded` now flow through the local rebuild path
+- Feat: Phase 3 SQL support — embedded SQL in Python execute/text call sites emits `executes` edges, and SQL view extraction can emit `derives_from` lineage edges for projected columns
+
 ## 0.4.23 (2026-04-18)
 
 - Fix: stale skill version warning persists after running `graphify install` when multiple platforms were previously installed — `graphify install` now refreshes `.graphify_version` in all other known skill directories so the warning clears across the board (#178)

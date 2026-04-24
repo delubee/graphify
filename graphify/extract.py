@@ -3196,7 +3196,15 @@ def _check_tree_sitter_version() -> None:
         )
 
 
-def extract(paths: list[Path], cache_root: Path | None = None) -> dict:
+def extract(
+    paths: list[Path],
+    cache_root: Path | None = None,
+    *,
+    sql_dialect: str = "auto",
+    sql_object_level: str = "statement",
+    sql_lineage: bool = False,
+    sql_embedded: bool = False,
+) -> dict:
     """Extract AST nodes and edges from a list of code files.
 
     Two-pass process:
@@ -3290,7 +3298,13 @@ def extract(paths: list[Path], cache_root: Path | None = None) -> dict:
         if path.suffix == ".sql":
             from .sql import extract_sql
 
-            result = extract_sql(path, project_root=cache_root or root)
+            result = extract_sql(
+                path,
+                project_root=cache_root or root,
+                dialect=sql_dialect,
+                object_level=sql_object_level,
+                lineage=sql_lineage,
+            )
         else:
             if extractor is None:
                 continue
@@ -3379,6 +3393,21 @@ def extract(paths: list[Path], cache_root: Path | None = None) -> dict:
                     "source_location": rc.get("source_location"),
                     "weight": 1.0,
                 })
+
+    if sql_embedded:
+        from .sql.embedded import detect_embedded
+
+        code_paths = [p for p in paths if p.suffix != ".sql"]
+        if code_paths:
+            embedded = detect_embedded(
+                code_paths,
+                per_file,
+                project_root=cache_root or root,
+                sql_dialect=sql_dialect,
+                sql_lineage=sql_lineage,
+            )
+            all_nodes.extend(embedded.get("nodes", []))
+            all_edges.extend(embedded.get("edges", []))
 
     return {
         "nodes": all_nodes,
